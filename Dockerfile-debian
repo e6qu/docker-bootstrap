@@ -1,0 +1,35 @@
+FROM debian:bookworm-slim AS build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    debootstrap \
+    fakeroot \
+    ca-certificates \
+    bash \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV SUITE=bookworm
+ENV MIRROR=http://deb.debian.org/debian
+
+RUN mkdir /rootfs
+
+RUN fakeroot debootstrap --variant=minbase \
+    --include=ca-certificates,bash \
+    $SUITE /rootfs $MIRROR
+
+RUN rm -rf /rootfs/var/lib/apt/lists/* \
+           /rootfs/tmp/* \
+           /rootfs/var/tmp/*
+
+# Stage 2: Assemble the Final Image from scratch
+FROM scratch
+
+COPY --from=build /rootfs/ /
+
+RUN mkdir -p /proc /sys /dev /run
+
+ENV LANG=C.UTF-8 \
+    LANGUAGE=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+CMD ["/bin/bash"]
