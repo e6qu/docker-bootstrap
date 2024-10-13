@@ -1,0 +1,49 @@
+FROM alpine:latest AS busybox-build
+
+RUN apk add --no-cache \
+    build-base \
+    wget \
+    ca-certificates \
+    musl-dev \
+    linux-headers \
+    ncurses-dev \
+    pkgconf \
+    bison \
+    flex
+
+ENV BUSYBOX_VERSION=1.36.1
+
+RUN wget https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2 \
+    && wget https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2.sha256 \
+    && sha256sum -c busybox-${BUSYBOX_VERSION}.tar.bz2.sha256
+
+RUN tar -xjf busybox-${BUSYBOX_VERSION}.tar.bz2
+
+WORKDIR busybox-${BUSYBOX_VERSION}
+
+RUN make defconfig
+
+RUN sed -i 's/.*CONFIG_STATIC.*/CONFIG_STATIC=y/' .config \
+    && sed -i 's/.*CONFIG_PIE.*/# CONFIG_PIE is not set/' .config \
+    && sed -i 's/.*CONFIG_FEATURE_INSTALLER.*/CONFIG_FEATURE_INSTALLER=y/' .config \
+    && sed -i 's/.*CONFIG_INSTALL_APPLET_SYMLINKS.*/CONFIG_INSTALL_APPLET_SYMLINKS=y/' .config \
+    && sed -i 's@.*CONFIG_PREFIX.*@CONFIG_PREFIX="/rootfs"@' .config
+
+# Handle new configuration options non-interactively
+RUN yes "" | make oldconfig
+
+# Compile BusyBox
+RUN make -j$(nproc)
+
+# Install BusyBox to /rootfs
+RUN make install
+
+# Stage 2: Create the minimal final image
+FROM scratch
+
+# Copy the root filesystem from the build stage
+COPY --from=busybox-build /rootfs/ /
+
+ENV PATH=/bin
+
+ENTRYPOINT ["/bin/sh"]
